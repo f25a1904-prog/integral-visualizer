@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simple Integration Calculator & Visualizer</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjs/11.8.0/math.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f7fb;
+            color: #333;
+        }
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            background: #ffffff;
+            padding: 25px;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+        }
+        h1 {
+            text-align: center;
+            color: #2c3e50;
+            margin-top: 0;
+        }
+        .app-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 20px;
+        }
+        @media(min-width: 768px) {
+            .app-grid {
+                grid-template-columns: 350px 1fr;
+            }
+        }
+        .controls {
+            background: #f8fafc;
+            padding: 20px;
+            border-radius: 8px;
+            border: 1px solid #e2e8f0;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+        .input-group {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+        label {
+            font-weight: 600;
+            font-size: 0.9rem;
+            color: #4a5568;
+        }
+        input[type="text"] {
+            padding: 10px;
+            font-size: 1rem;
+            border: 1px solid #cbd5e1;
+            border-radius: 6px;
+            font-family: monospace;
+        }
+        .slider-container {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        input[type="range"] {
+            flex-grow: 1;
+        }
+        .value-display {
+            min-width: 40px;
+            text-align: right;
+            font-family: monospace;
+            font-weight: bold;
+        }
+        .result-box {
+            margin-top: 10px;
+            padding: 15px;
+            background: #e0f2fe;
+            border-radius: 6px;
+            border-left: 5px solid #0284c7;
+        }
+        .result-formula {
+            font-size: 1.1rem;
+            margin-bottom: 5px;
+        }
+        .result-value {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: #0369a1;
+            font-family: monospace;
+        }
+        .graph-container {
+            position: relative;
+            min-height: 300px;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            background: #fff;
+            padding: 10px;
+        }
+        .error {
+            color: #dc2626;
+            font-size: 0.85rem;
+            margin-top: 5px;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>Simple Integration Calculator</h1>
+    
+    <div class="app-grid">
+        <div class="controls">
+            <div class="input-group">
+                <label for="functionInput">Function f(x):</label>
+                <input type="text" id="functionInput" value="x^2 - 1" placeholder="e.g., x^2 - 1, sin(x)">
+                <div id="errorMsg" class="error">Invalid mathematical expression.</div>
+            </div>
+
+            <div class="input-group">
+                <label>Lower Limit (a):</label>
+                <div class="slider-container">
+                    <input type="range" id="sliderA" min="-5" max="5" step="0.1" value="-1">
+                    <span id="valA" class="value-display">-1</span>
+                </div>
+            </div>
+
+            <div class="input-group">
+                <label>Upper Limit (b):</label>
+                <div class="slider-container">
+                    <input type="range" id="sliderB" min="-5" max="5" step="0.1" value="2">
+                    <span id="valB" class="value-display">2</span>
+                </div>
+            </div>
+
+            <div class="result-box">
+                <div class="result-formula">∫<sub>a</sub><sup>b</sup> f(x) dx =</div>
+                <div id="resultValue" class="result-value">0.00</div>
+            </div>
+        </div>
+
+        <div class="graph-container">
+            <canvas id="myChart"></canvas>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Elements
+    const functionInput = document.getElementById('functionInput');
+    const sliderA = document.getElementById('sliderA');
+    const sliderB = document.getElementById('sliderB');
+    const valA = document.getElementById('valA');
+    const valB = document.getElementById('valB');
+    const resultValue = document.getElementById('resultValue');
+    const errorMsg = document.getElementById('errorMsg');
+    const ctx = document.getElementById('myChart').getContext('2d');
+
+    let chart;
+
+    // Numerical integration using Simpson's Rule
+    function calculateIntegral(f, a, b, n = 1000) {
+        if (a === b) return 0;
+        
+        // Handle inverted limits structurally
+        let inverted = false;
+        if (a > b) {
+            let temp = a;
+            a = b;
+            b = temp;
+            inverted = true;
+        }
+
+        const h = (b - a) / n;
+        let sum = f(a) + f(b);
+
+        for (let i = 1; i < n; i++) {
+            const x = a + i * h;
+            sum += f(x) * (i % 2 === 0 ? 2 : 4);
+        }
+
+        let result = (h / 3) * sum;
+        return inverted ? -result : result;
+    }
+
+    // Safely parse user formula string into a executable JS function
+    function getMathFunction() {
+        try {
+            const expr = functionInput.value;
+            // compile expression via math.js
+            const compiled = math.compile(expr);
+            errorMsg.style.display = 'none';
+            return (xValue) => compiled.evaluate({ x: xValue });
+        } catch (e) {
+            errorMsg.style.display = 'block';
+            return null;
+        }
+    }
+
+    // Build data arrays for Chart.js rendering
+    function updateChartAndResult() {
+        const f = getMathFunction();
+        if (!f) return;
+
+        const a = parseFloat(sliderA.value);
+        const b = parseFloat(sliderB.value);
+
+        valA.textContent = a.toFixed(1);
+        valB.textContent = b.toFixed(1);
+
+        // 1. Calculate the Integral value
+        let areaVal = calculateIntegral(f, a, b);
+        resultValue.textContent = isNaN(areaVal) ? "Error" : areaVal.toFixed(4);
+
+        // 2. Generate chart data points (-5 to +5 x range)
+        const xMin = -5, xMax = 5;
+        const steps = 200;
+        const stepSize = (xMax - xMin) / steps;
+
+        const mainCurveData = [];
+        const shadedAreaData = [];
+
+        // Track limits dynamically for rendering the colored bounding region
+        const lowerLimit = Math.min(a, b);
+        const upperLimit = Math.max(a, b);
+
+        for (let i = 0; i <= steps; i++) {
+            let x = xMin + (i * stepSize);
+            let y = 0;
+            try {
+                y = f(x);
+            } catch(e) { y = null; }
+
+            mainCurveData.push({ x: x, y: y });
+
+            // Generate filling dataset strictly bounded by intervals [a, b]
+            if (x >= lowerLimit && x <= upperLimit) {
+                shadedAreaData.push({ x: x, y: y });
+            }
+        }
+
+        // 3. Render or Update Chart config elements
+        if (chart) {
+            chart.data.datasets[0].data = mainCurveData;
+            chart.data.datasets[1].data = shadedAreaData;
+            chart.update('none'); // silent update for performance stability during slider drag
+        } else {
+            chart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    datasets: [
+                        {
+                            label: 'f(x)',
+                            data: mainCurveData,
+                            borderColor: '#2563eb',
+                            borderWidth: 3,
+                            pointRadius: 0,
+                            fill: false,
+                            tension: 0.1
+                        },
+                        {
+                            label: 'Area Under Curve',
+                            data: shadedAreaData,
+                            backgroundColor: 'rgba(37, 99, 235, 0.25)',
+                            borderColor: 'transparent',
+                            pointRadius: 0,
+                            fill: 'origin', // Shades directly down/up to the x-axis
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: {
+                            type: 'linear',
+                            position: 'bottom',
+                            min: xMin,
+                            max: xMax,
+                            grid: { color: '#e2e8f0' }
+                        },
+                        y: {
+                            type: 'linear',
+                            min: -10,
+                            max: 10,
+                            grid: { color: '#e2e8f0' }
+                        }
+                    },
+                    plugins: {
+                        legend: { display: false }
+                    }
+                }
+            });
+        }
+    }
+
+    // Event Listeners
+    functionInput.addEventListener('input', updateChartAndResult);
+    sliderA.addEventListener('input', updateChartAndResult);
+    sliderB.addEventListener('input', updateChartAndResult);
+
+    // Initial Trigger on load
+    updateChartAndResult();
+</script>
+
+</body>
+</html>
